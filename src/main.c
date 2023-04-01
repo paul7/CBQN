@@ -7,6 +7,8 @@
 #include "utils/time.h"
 #include "utils/interrupt.h"
 
+extern void hist_push(B res); // sysfn.c
+
 #if defined(_WIN32) || defined(_WIN64)
   #include "windows/getline.h"
 #endif
@@ -850,6 +852,7 @@ void cbqn_runLine0(char* ln, i64 read) {
   ptr_dec(block);
   
   if (output) {
+    hist_push(res);
     if (output!=2 && FORMATTER) {
       B resFmt = bqn_fmt(res);
       printsB(resFmt); dec(resFmt);
