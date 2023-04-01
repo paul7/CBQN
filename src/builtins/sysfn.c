@@ -1,5 +1,7 @@
 #include "../core.h"
 #include "../utils/hash.h"
+#include "../utils/calls.h"
+#include "../utils/mut.h"
 #include "../utils/file.h"
 #include "../utils/wyhash.h"
 #include "../utils/time.h"
@@ -12,6 +14,35 @@
   #include "../windows/getline.c"
 #endif
 #include <errno.h>
+
+#define MAX_HIST_SIZE 10
+B resHistory[MAX_HIST_SIZE];
+usz histIdx = 0;
+usz histSize = 0;
+
+void hist_push(B res) {
+  ++histSize;
+  if (histSize > MAX_HIST_SIZE) histSize = MAX_HIST_SIZE;
+  histIdx = (histIdx + 1) % MAX_HIST_SIZE;
+  dec(resHistory[histIdx]);
+  resHistory[histIdx] = inc(res);
+}
+void hist_init() {
+  for (usz i = 0; i < MAX_HIST_SIZE; i++) {
+    resHistory[i] = bi_N;
+    gc_add_ref(&resHistory[i]);
+  }
+}
+void hist_reset() {
+  histSize = 0;
+  for (usz i = 0; i < MAX_HIST_SIZE; i++) {
+    dec(resHistory[i]);
+    resHistory[i] = bi_N;
+  }
+}
+B hist_at(usz idx) {
+  return inc(resHistory[(MAX_HIST_SIZE + histIdx - idx) % MAX_HIST_SIZE]);
+}
 
 static bool eqStr(B w, u32* x) {
   if (isAtm(w) || RNK(w)!=1) return false;
@@ -1251,6 +1282,34 @@ B getNsNS(void) {
   return incG(nsNS);
 }
 
+B hAt_c1(B t, B x) {
+  if (!isNum(x)) thrM("•hist.At: Argument must be a number");
+  usz idx = o2s(x);
+  if (idx >= histSize) thrM("•hist.At: Argument too large");
+  return hist_at(o2s(x));
+}
+B hReset_c1(B t, B x) {
+  hist_reset();
+  return m_i32(1);
+}
+B hAll_c1(B t, B x) {
+  if (histSize == 0) return emptyHVec();
+  MAKE_MUT(r, histSize);
+  for (usz i=0; i<histSize; ++i) mut_set(r, i, hist_at(i));
+  return mut_fv(r);
+}
+static B histNS;
+B getHistNS(void) {
+  if (histNS.u == 0) {
+    #define F(X) incG(bi_##X),
+    Body* d = m_nnsDesc("all", "at", "reset");
+    histNS =  m_nns(d,F(hAll)F(hAt)F(hReset));
+    #undef F
+    gc_add(histNS);
+
+  }
+  return incG(histNS);
+}
 
 
 typedef struct CastType { usz s; bool c; } CastType;
@@ -1615,7 +1674,9 @@ static Body* file_nsGen;
   F("args", U"•args", tag(16,VAR_TAG)) \
   F("listsys", U"•listsys", tag(17,VAR_TAG)) \
   OPTSYS(NATIVE_COMPILER)(F("compobj", U"•CompObj", tag(18,VAR_TAG))) \
-  F("ns", U"•ns", tag(19,VAR_TAG))
+  F("ns", U"•ns", tag(19,VAR_TAG)) \
+  F("last", U"•last", tag(20,VAR_TAG)) \
+  F("hist", U"•hist", tag(21,VAR_TAG))
 
 NFnDesc* ffiloadDesc;
 B ffiload_c2(B t, B w, B x);
@@ -1720,6 +1781,12 @@ B sys_c1(B t, B x) {
       case 17: cr = incG(curr_ns); break; // •listsys
       case 18: cr = incG(bi_compObj); break; // •CompObj
       case 19: cr = getNsNS(); break; // •ns
+      case 20: { // •last
+        if (histSize == 0) thrM("No previous result for •last");
+        cr = hist_at(0);
+        break;
+      }
+      case 21: cr = getHistNS(); break; // •hist
     }
     HARR_ADD(r, i, cr);
   }
@@ -1755,6 +1822,7 @@ u32* dsv_text[] = {
   U"•ns.Get",U"•ns.Has",U"•ns.Keys",
   U"•rand.Deal",U"•rand.Range",U"•rand.Subset",
   U"•term.CharB",U"•term.CharN",U"•term.ErrRaw",U"•term.Flush",U"•term.OutRaw",U"•term.RawMode",
+  U"•hist.All",U"•hist.At",U"•hist.Reset",
   NULL
 };
 
@@ -1776,6 +1844,9 @@ void sysfn_init(void) {
   lastErrMsg = bi_N;
   gc_add_ref(&lastErrMsg);
   #endif
+
+  hist_init();
+
   cdPath = m_c8vec(".", 1); gc_add(cdPath);
   
   gc_add_ref(&importKeyList);
