@@ -132,6 +132,9 @@ static NOINLINE i64 readInt(char** p) {
     ")switchCompiler",
 #endif
     ")e ", ")explain ",
+#if HAS_VERSION
+    ")ver",
+#endif
   };
   
   NOINLINE void cfg_changed(void) {
@@ -593,6 +596,9 @@ bool ryu_s2d_n(u8* buffer, int len, f64* result);
 #endif
 
 void heap_printInfo(bool sizes, bool types, bool freed, bool chain);
+#if HAS_VERSION
+extern char* cbqn_versionString;
+#endif
 void cbqn_runLine0(char* ln, i64 read) {
   if (ln[0]==0 || read==0) return;
   
@@ -795,6 +801,11 @@ void cbqn_runLine0(char* ln, i64 read) {
       }
       dec(expl);
       return;
+#if HAS_VERSION
+    } else if (isCmd(cmdS, &cmdE, "ver")) {
+      printf("%s", cbqn_versionString);
+      return;
+#endif
     } else {
       printf("Unknown REPL command\n");
       return;
@@ -900,9 +911,6 @@ int main() {
   repl_init();
 }
 #elif !CBQN_SHARED
-#if HAS_VERSION
-extern char* cbqn_versionString;
-#endif
 int main(int argc, char* argv[]) {
   #if USE_REPLXX_IO
     cbqn_init_replxx();
